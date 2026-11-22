@@ -2,8 +2,10 @@ import asyncio
 import logging
 import sys
 import time
+import wave
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from pitwall.core.channels import Channel
@@ -11,7 +13,13 @@ from pitwall.core.events import Segment, SpeakRequest
 from pitwall.core.plugin import Context
 from pitwall.core.registry import factory_for
 from pitwall.plugins import register_builtins, tts_mlx
-from pitwall.plugins.tts_mlx import DEFAULT_MODEL, MlxTtsPlugin
+from pitwall.plugins.tts_mlx import (
+    DEFAULT_MODEL,
+    EDGE_PAD_SECONDS,
+    MlxTtsPlugin,
+    render_segment,
+    trim_silence,
+)
 
 
 class FakeLoader:
@@ -200,6 +208,41 @@ async def test_unicode_survives(monkeypatch):
     renderer = FakeRenderer()
     await run_mlx({}, [request(Segment("😀 hi", index=0))], FakeLoader(), renderer, monkeypatch)
     assert renderer.calls[0][0] == "😀 hi"
+
+
+def test_trim_silence_drops_edges_keeps_pad():
+    sr = 1000  # pad = int(1000 * 0.02) = 20 samples
+    audio = np.concatenate([np.zeros(300), np.full(200, 0.5), np.zeros(400)])
+    trimmed = trim_silence(audio, sr)
+    assert len(trimmed) == 200 + 2 * int(sr * EDGE_PAD_SECONDS)
+
+
+def test_trim_silence_clamps_when_shorter_than_pad():
+    audio = np.array([0.0, 0.0, 0.5, 0.0, 0.0])
+    trimmed = trim_silence(audio, 100_000)  # pad huge, must clamp
+    assert len(trimmed) == 5
+
+
+def test_trim_silence_all_silent_unchanged():
+    audio = np.zeros(500)
+    assert len(trim_silence(audio, 24_000)) == 500
+
+
+def test_render_segment_trims_padded_audio(tmp_path):
+    class Result:
+        sample_rate = 24_000
+        audio = np.concatenate([np.zeros(2000), np.full(500, 0.5), np.zeros(3000)])
+
+    class Model:
+        def generate(self, text, **kwargs):
+            yield Result()
+
+    path = str(tmp_path / "out.wav")
+    render_segment(Model(), "hi", None, None, path)
+    with wave.open(path) as w:
+        frames = w.getnframes()
+    # speech at [2000, 2500); pad = 480 -> [1520, 2980) = 1460 frames
+    assert frames == 1460
 
 
 async def test_model_load_failure_propagates_from_start(monkeypatch):

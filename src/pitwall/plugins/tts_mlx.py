@@ -17,6 +17,21 @@ from pitwall.core.plugin import Context
 from pitwall.plugins.tts_say import resolve_voice
 
 DEFAULT_MODEL = "mlx-community/Kokoro-82M-bf16"
+SILENCE_THRESHOLD = 0.01  # amplitude below which a sample counts as silence
+EDGE_PAD_SECONDS = 0.02  # silence kept at clip edges after trimming
+
+
+def trim_silence(audio: Any, sample_rate: int) -> Any:
+    """Drop leading/trailing silence Kokoro pads onto clips, keeping a small pad."""
+    import numpy as np  # type: ignore
+
+    loud = np.flatnonzero(np.abs(audio) > SILENCE_THRESHOLD)
+    if not loud.size:
+        return audio
+    pad = int(sample_rate * EDGE_PAD_SECONDS)
+    start = max(0, int(loud[0]) - pad)
+    end = min(len(audio), int(loud[-1]) + 1 + pad)
+    return audio[start:end]
 
 
 def load_model(repo: str) -> Any:
@@ -52,6 +67,7 @@ def render_segment(
     import numpy as np  # type: ignore
 
     audio = np.concatenate([np.asarray(c) for c in chunks])
+    audio = trim_silence(audio, sample_rate)
     pcm = (np.clip(audio, -1.0, 1.0) * 32767.0).astype("<i2")
     with wave.open(path, "wb") as w:
         w.setnchannels(1)
