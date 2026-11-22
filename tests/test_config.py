@@ -1,6 +1,10 @@
+from pathlib import Path
+
 import pytest
 
 from pitwall.core.config import ConfigError, load_config
+from pitwall.core.registry import factory_for
+from pitwall.plugins import register_builtins
 
 
 def write(tmp_path, text):
@@ -80,3 +84,12 @@ def test_malformed_toml_raises(tmp_path):
 def test_missing_file_raises(tmp_path):
     with pytest.raises(ConfigError, match="config"):
         load_config(tmp_path / "nope.toml")
+
+
+def test_example_config_loads_and_names_known_plugins():
+    register_builtins()
+    example = Path(__file__).parents[1] / "config.toml.example"
+    config = load_config(example)
+    assert config.instances
+    for spec in config.instances:
+        factory_for(spec.plugin)

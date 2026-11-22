@@ -1,0 +1,28 @@
+# PitWall example configuration.
+#
+# Copy this file to your config path and edit it:
+#   $XDG_CONFIG_HOME/pitwall/config.toml
+#   ~/.config/pitwall/config.toml   (the usual default)
+#
+# Save the file while PitWall is running and it rebuilds itself in-process;
+# invalid changes are rejected and the previous setup keeps running.
+
+# Read every message from one channel's chat.
+[[sink.twitch]]
+channel = "shroud"  # <-- put your channel here
+
+# Turn messages into speech; usernames and text can use different voices.
+[[handler.tts]]
+alias = "reader"
+# Per-part voices — names must exist in the tts.say voices table below:
+# voices = { user = "samantha", text = "daniel" }
+
+# The macOS `say` synthesizer.
+[[tts.say]]
+alias = "voice"
+# voices = { samantha = "Samantha", daniel = "Daniel" }
+
+# Play through local speakers.
+[[output.local]]
+alias = "speakers"
+# enabled = false  # any instance can be disabled without deleting it

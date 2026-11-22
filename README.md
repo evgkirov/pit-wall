@@ -30,7 +30,9 @@ On first run PitWall tells you where it expects its config:
 $XDG_CONFIG_HOME/pitwall/config.toml   (~/.config/pitwall/config.toml by default)
 ```
 
-A minimal config — read every message from `shroud`'s chat aloud:
+A commented template lives in [`config.toml.example`](config.toml.example) —
+copy it to the default path and edit. A minimal config — read every message
+from `shroud`'s chat aloud:
 
 ```toml
 [[sink.twitch]]
