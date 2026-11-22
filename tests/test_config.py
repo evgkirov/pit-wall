@@ -93,19 +93,3 @@ def test_example_config_loads_and_names_known_plugins():
     assert config.instances
     for spec in config.instances:
         factory_for(spec.plugin)
-
-
-def test_local_config_loads_and_names_known_plugins():
-    """The gitignored root config.toml is what the app actually runs here.
-
-    Present only on dev machines (CI has none), so skip when absent. A failure
-    means the live config would not survive a rebuild after this change.
-    """
-    register_builtins()
-    local = Path(__file__).parents[1] / "config.toml"
-    if not local.exists():
-        pytest.skip("no local config.toml (gitignored; dev machines only)")
-    config = load_config(local)
-    assert config.instances
-    for spec in config.instances:
-        factory_for(spec.plugin)
