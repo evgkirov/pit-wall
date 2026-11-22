@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from pitwall!")
+"""PitWall — a read-only Twitch chat reader."""
