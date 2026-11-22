@@ -23,6 +23,13 @@ def test_missing_config_exits_cleanly(tmp_path, capsys):
     assert "Traceback" not in err
 
 
+def test_short_config_flag(tmp_path, capsys):
+    assert main(["-c", str(tmp_path / "nope.toml")]) == 1
+    err = capsys.readouterr().err
+    assert "nope.toml" in err
+    assert "Traceback" not in err
+
+
 def test_malformed_config_exits_cleanly(tmp_path, capsys):
     config = tmp_path / "config.toml"
     config.write_text("[broken")

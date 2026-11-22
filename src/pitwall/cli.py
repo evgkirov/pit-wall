@@ -57,7 +57,11 @@ def main(argv: list[str] | None = None) -> int:
         prog="pitwall", description="PitWall — read-only Twitch chat reader"
     )
     parser.add_argument(
-        "--config", type=Path, default=None, help=f"config path (default: {default_config_path()})"
+        "-c",
+        "--config",
+        type=Path,
+        default=None,
+        help=f"config path (default: {default_config_path()})",
     )
     args = parser.parse_args(argv)
 
