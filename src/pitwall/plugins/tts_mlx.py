@@ -22,7 +22,9 @@ DEFAULT_MODEL = "mlx-community/Kokoro-82M-bf16"
 def load_model(repo: str) -> Any:
     """Load an mlx-audio model, with a helpful error when the extra is missing."""
     try:
-        from mlx_audio.tts.utils import load_model as mlx_load_model  # type: ignore[import-not-found]
+        from mlx_audio.tts.utils import (  # type: ignore[import-not-found, import-untyped]
+            load_model as mlx_load_model,
+        )
     except ImportError as exc:
         msg = (
             "tts.mlx needs the mlxaudio extra — install with: "
