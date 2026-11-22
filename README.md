@@ -1,2 +1,2 @@
-# pit-wall
+# PitWall
 Vibecoded AF

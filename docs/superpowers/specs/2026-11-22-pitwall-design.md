@@ -1,8 +1,8 @@
-# Pit Wall — Design (v1)
+# PitWall — Design (v1)
 
 ## Intent & why
 
-Pit Wall is a small, modular Twitch chat bot for the owner's own streams, run
+PitWall is a small, modular Twitch chat bot for the owner's own streams, run
 locally on macOS from a single terminal command. v1 is a **chat reader**: it
 connects to a read-only Twitch chat and reads each message aloud via the macOS
 `say` utility, so a streamer who can't watch chat while streaming can hear it.
@@ -19,9 +19,9 @@ Web/TUI front-end). v1 builds the seam; future work drops into it.
   through a configurable filter chain.
 - A modular, typed-channel pipeline (sink → handler → TTS → output) with a
   registry and per-plugin config.
-- A single `.toml` config under `$XDG_CONFIG_HOME/pit-wall/`, watched; a change
+- A single `.toml` config under `$XDG_CONFIG_HOME/pitwall/`, watched; a change
   rebuilds the running plugin graph.
-- Run as one command (`uv run pit-wall`) with graceful start / stop / restart.
+- Run as one command (`uv run pitwall`) with graceful start / stop / restart.
 - Clean, type-checked, linted, tested code (ruff + pytest).
 
 ## Non-goals (v1)
@@ -71,7 +71,7 @@ debug when a streamer asks "why did that get read."
 
 ## Architecture (chosen: typed channels)
 
-**Runtime.** `asyncio`. The `pit-wall` process *is* the loop. Each plugin runs
+**Runtime.** `asyncio`. The `pitwall` process *is* the loop. Each plugin runs
 as its own task under a supervisor.
 
 **Channels** (`asyncio.Queue`):
@@ -138,8 +138,8 @@ routable audio.
 
 **Config & restart**
 
-- Path: `$XDG_CONFIG_HOME/pit-wall/config.toml` (fallback
-  `~/.config/pit-wall/config.toml`; `$XDG_CONFIG_HOME` may be unset).
+- Path: `$XDG_CONFIG_HOME/pitwall/config.toml` (fallback
+  `~/.config/pitwall/config.toml`; `$XDG_CONFIG_HOME` may be unset).
 - Shape: a top-level `enabled` list plus one `[section]` per plugin (and per
   filter) holding its config. v1 default:
 
@@ -195,7 +195,7 @@ down the loop. `twitchio` handles chat reconnection.
   separate plugin type yet; they get promoted if they ever need behavior beyond
   a config table.
 - Layout: a `src/pitwall/` package — core in `core/`, plugins in `plugins/`,
-  entry via `__main__.py` plus a `pit-wall` console script.
+  entry via `__main__.py` plus a `pitwall` console script.
 - Testing: `pytest` + `pytest-asyncio`; mock `say` (assert the command line) and
   mock `twitchio` (feed synthetic messages). Ruff for lint + format.
 
