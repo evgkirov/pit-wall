@@ -21,7 +21,7 @@ Web/TUI front-end). v1 builds the seam; future work drops into it.
   registry and per-plugin config.
 - A single `.toml` config under `$XDG_CONFIG_HOME/pitwall/`, watched; a change
   rebuilds the running plugin graph.
-- Run as one command (`uv run pitwall`) with graceful start / stop / restart.
+- Run as one command (`make run`) with graceful start / stop / restart.
 - Clean, type-checked, linted, tested code (ruff + pytest).
 
 ## Non-goals (v1)
@@ -85,6 +85,13 @@ delivered only to the instance it names on that channel; without one it goes to
 every instance on the channel. This is what lets two `tts.say` instances (say,
 different voices) coexist without reading every message twice.
 
+**Voices within an utterance.** Routing picks the *speaker* (an instance);
+voice keys pick the *timbre* (within that instance). A `SpeakRequest` is an
+ordered list of segments, each optionally naming a voice key that the consuming
+TTS instance resolves to a backend voice. Per-part voices never route to
+multiple instances — instances consume in parallel, which would overlap or
+reorder the parts.
+
 **Plugin contract.** Every plugin implements an async lifecycle:
 
 ```python
@@ -111,8 +118,11 @@ built in v1, but the registry shape leaves the seam open.
 **Data models** (dataclasses in `core/events.py`):
 
 - `Message(source, user, text, ts, kind="chat", raw=None)`
-- `SpeakRequest(text, source=None, user=None, meta=None, target=None)` —
-  `target` names the TTS instance that should read it (see targeted delivery).
+- `Segment(text, voice=None)` — one spoken part; `voice` is a voice *key* the
+  TTS instance resolves (`None` = the instance's default voice).
+- `SpeakRequest(segments, source=None, user=None, meta=None, target=None)` —
+  an ordered tuple of `Segment`s; `target` names the TTS instance that should
+  read it (see targeted delivery).
 - `Audio(text, source=None, user=None, played=False)` — in v1 it carries the
   text plus a "played" marker; a future TTS returns bytes/stream that an output
   consumes.
@@ -132,14 +142,23 @@ built in v1, but the registry shape leaves the seam open.
     `min_length`, which skips messages shorter than 2 characters; everything
     else is read. More named filters (by user, keyword, emote-only) drop in
     later without touching core.
-  - *Utterance template*: how a `Message` becomes spoken text. Default
-    `"{user} says: {text}"` (configurable).
+  - *Utterance template*: how a `Message` becomes spoken segments. Default
+    `"{user} says: {text}"` (configurable). Rendering splits the template into
+    a segment per placeholder; an optional `voices` map (placeholder → voice
+    key, e.g. `{user = "samantha", text = "daniel"}`) keys any placeholder's
+    part, and a literal run joins the preceding placeholder's voice — so the
+    default template reads "Alice says:" in the username's voice and the
+    message text in another.
   - *Target*: optional `target` config pins the handler's output to one TTS
     instance (sets `SpeakRequest.target`); unset means every TTS instance
     reads. A future filter could set it per message (e.g. a per-viewer voice).
   This is the only v1 handler; command handling is a future handler.
-- `tts.say` — consumes `speak`; runs `say [-v voice] [-r rate] "<text>"` as a
-  subprocess to play locally; publishes `Audio(..., played=True)` to `audio`.
+- `tts.say` — consumes `speak`; plays a request's segments in order, one
+  `say [-v <voice>] [-r rate] "<text>"` subprocess per segment, awaited so
+  parts never overlap. Config: default `voice` and `rate` plus a `voices` map
+  (voice key → `say` voice name); an unknown key logs a warning and falls back
+  to the default voice. Publishes `Audio(..., played=True)` to `audio` once
+  per request.
 - `output.local` — consumes `audio`; in v1 it confirms / logs playback. This is
   the seam: a future `output.discord` / `output.pulse` consumes the same channel.
 
@@ -157,7 +176,8 @@ routable audio.
   instance's config. `enabled = false` disables an instance (default `true`);
   there is no separate enabled list. A table missing its `plugin` key is a
   config error. Filters live in a nested `filters` table inside their handler
-  instance. v1 example (one of everything, plus a second disabled voice):
+  instance. v1 example (one of everything; usernames read in Samantha,
+  messages in Daniel):
 
 ```toml
 [twitch]
@@ -168,19 +188,17 @@ channel = "<your channel>"      # the only required value
 plugin = "handler.tts"
 template = "{user} says: {text}"
 filters = ["min_length"]
-# target = "voice_daniel"       # pin to one TTS instance; all when unset
+voices = { user = "samantha", text = "daniel" }  # placeholder → voice key
+# target = "voice"              # pin to one TTS instance; all when unset
 
 [reader.filters.min_length]
 min = 2
 
-[voice_daniel]
+[voice]                         # ONE instance plays each request in order
 plugin = "tts.say"
-voice = "Daniel"
-
-[voice_samantha]                # same plugin, second instance
-plugin = "tts.say"
-voice = "Samantha"
-enabled = false
+voice = "Alex"                  # default for unkeyed parts
+rate = 180
+voices = { samantha = "Samantha", daniel = "Daniel" }  # key → say voice name
 
 [speakers]
 plugin = "output.local"
@@ -213,6 +231,10 @@ down the loop. `twitchio` handles chat reconnection.
   be instantiated multiple times (e.g. two `tts.say` voices).
 - Routing is **target-based**: an event may name a target instance; delivery
   goes there only, or to every instance on the channel when unset.
+- Utterances are **per-part voiced**: a request is ordered segments with voice
+  keys resolved inside one TTS instance; routing stays per-request (`target`),
+  never per-part.
+- The user-facing entrypoint is `make run`.
 - If `twitchio` can't run on Python 3.15, the Python pin bends (the newest
   version twitchio supports, via `uv`); hand-rolling IRC is a last resort.
 
@@ -225,7 +247,9 @@ down the loop. `twitchio` handles chat reconnection.
   separate plugin type yet; they get promoted if they ever need behavior beyond
   a config table.
 - Layout: a `src/pitwall/` package — core in `core/`, plugins in `plugins/`,
-  entry via `__main__.py` plus a `pitwall` console script.
+  entry via `__main__.py` plus a `pitwall` console script. The user-facing
+  entrypoint is a Makefile: `make run` (wraps `uv run pitwall`), with
+  `make test` and `make lint` alongside.
 - Testing: `pytest` + `pytest-asyncio`; mock `say` (assert the command line) and
   mock `twitchio` (feed synthetic messages). Ruff for lint + format.
 
