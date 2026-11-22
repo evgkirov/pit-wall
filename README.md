@@ -15,6 +15,12 @@ make typecheck  # mypy
 make format     # autofix + reformat
 ```
 
+Install the git hooks once (hygiene + ruff + mypy on every commit):
+
+```sh
+uv tool install pre-commit && pre-commit install
+```
+
 On first run PitWall tells you where it expects its config:
 
 ```
