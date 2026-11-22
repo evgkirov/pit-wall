@@ -45,7 +45,7 @@ class Runtime:
             if not spec.enabled:
                 continue
             factory = factory_for(spec.plugin)  # raises UnknownPluginError
-            plugin = factory()
+            plugin = factory(spec.config)
             ctx = Context(
                 instance=spec.name,
                 config=dict(spec.config),

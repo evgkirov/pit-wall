@@ -5,7 +5,7 @@ from collections.abc import Callable
 from pitwall.core.config import InstanceSpec
 from pitwall.core.plugin import Plugin
 
-Factory = Callable[[], Plugin]
+Factory = Callable[[dict], Plugin]
 
 _factories: dict[str, Factory] = {}
 
@@ -27,4 +27,4 @@ def factory_for(plugin: str) -> Factory:
 
 
 def build(spec: InstanceSpec) -> Plugin:
-    return factory_for(spec.plugin)()
+    return factory_for(spec.plugin)(spec.config)

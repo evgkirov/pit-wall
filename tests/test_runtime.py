@@ -14,7 +14,7 @@ def spec(name, plugin="test.dummy", enabled=True):
 
 def recording_factory(built: list) -> type:
     class RecordingDummy(DummyPlugin):
-        def __init__(self):
+        def __init__(self, config: dict | None = None):
             super().__init__()
             built.append(self)
 

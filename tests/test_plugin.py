@@ -23,7 +23,7 @@ class DummyPlugin:
 
     name = "test.dummy"
 
-    def __init__(self):
+    def __init__(self, config: dict | None = None):
         self.calls: list[str] = []
         self.ctx: Context | None = None
 
