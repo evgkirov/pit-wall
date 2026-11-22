@@ -16,7 +16,7 @@ Filter = Callable[[Message], bool]
 FilterFactory = Callable[[dict], Filter]
 FILTERS: dict[str, FilterFactory] = {}
 
-DEFAULT_TEMPLATE = "{user} says: {text}"
+DEFAULT_TEMPLATE = "{user} {text}"
 _PLACEHOLDERS = ("user", "text")
 _PLACEHOLDER_RE = re.compile(r"\{(user|text)\}")
 _ANY_BRACE_RE = re.compile(r"\{(\w+)\}")

@@ -14,6 +14,8 @@ channel = "shroud"  # <-- put your channel here
 # Turn messages into speech; usernames and text can use different voices.
 [[handler.tts]]
 alias = "reader"
+# Utterance template; nothing but a space separates the parts by default:
+# template = "{user} {text}"
 # Per-part voices — names must exist in the tts.say voices table below:
 # voices = { user = "samantha", text = "daniel" }
 

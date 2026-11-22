@@ -6,7 +6,7 @@ import pytest
 from pitwall.core.channels import Channel
 from pitwall.core.events import Message
 from pitwall.core.plugin import Context
-from pitwall.plugins.handler_tts import TtsHandlerPlugin, render
+from pitwall.plugins.handler_tts import DEFAULT_TEMPLATE, TtsHandlerPlugin, render
 
 
 def msg(text, kind="chat"):
@@ -65,6 +65,15 @@ def test_render_template_without_placeholders_is_one_literal():
     segs = render("hello world", msg("hi"), {})
     assert [s.text for s in segs] == ["hello world"]
     assert segs[0].index == 0
+
+
+async def test_default_template_is_user_then_text_without_says():
+    assert "{user}" in DEFAULT_TEMPLATE and "{text}" in DEFAULT_TEMPLATE
+    assert "says" not in DEFAULT_TEMPLATE
+    h = Harness({})
+    await h.run(msg("hi"))
+    segs = h.speak_q.get_nowait().segments
+    assert [s.text for s in segs] == ["alice hi"]
 
 
 def test_render_rejects_unknown_placeholder():
