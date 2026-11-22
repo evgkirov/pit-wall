@@ -2,8 +2,8 @@
 
 A modular, read-only Twitch chat reader for your own streams. It connects to
 your channel's chat anonymously (no credentials), reads messages aloud through
-the macOS `say` synthesizer, and plays them in order — usernames and messages
-can use different voices.
+the macOS `say` synthesizer (or local neural voices via mlx-audio), and plays
+them in order — usernames and messages can use different voices.
 
 ## Usage
 
@@ -57,6 +57,27 @@ voices = { user = "samantha", text = "daniel" }
 [[tts.say]]
 voices = { samantha = "Samantha", daniel = "Daniel" }
 ```
+
+### Neural voices (Apple Silicon)
+
+Swap `say` for local neural voices with
+[mlx-audio](https://github.com/Neywa-Labs/mlx-audio):
+
+```sh
+uv sync --extra mlxaudio
+```
+
+```toml
+[[tts.mlx]]
+alias = "voice"
+model = "mlx-community/Kokoro-82M-bf16"   # any mlx-audio model repo
+voices = { user = "af_heart", text = "am_michael" }
+speed = 1.0
+```
+
+The first run downloads model weights from Hugging Face; startup loads the
+model into memory (a few seconds). `voice`/`voices`/`speed` mirror `tts.say`,
+with model-specific voice names instead of macOS voice names.
 
 Save the file while PitWall is running and it rebuilds itself in-process —
 invalid changes are rejected and the previous graph keeps running.

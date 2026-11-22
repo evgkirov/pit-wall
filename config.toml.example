@@ -22,6 +22,15 @@ alias = "reader"
 alias = "voice"
 # voices = { samantha = "Samantha", daniel = "Daniel" }
 
+# Neural-voice synthesizer (Apple Silicon; needs the extra):
+#   uv sync --extra mlxaudio
+# Any mlx-audio model repo works; voice names are model-specific.
+# [[tts.mlx]]
+# alias = "voice"
+# model = "mlx-community/Kokoro-82M-bf16"
+# voices = { user = "af_heart", text = "am_michael" }
+# speed = 1.0
+
 # Play through local speakers.
 [[output.local]]
 alias = "speakers"
