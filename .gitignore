@@ -221,3 +221,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# PitWall local config (template: config.toml.example)
+/config.toml
