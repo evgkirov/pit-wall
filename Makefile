@@ -1,7 +1,8 @@
-.PHONY: run test lint format
+.PHONY: run test lint typecheck format
 
+# make run CONFIG=path/to/config.toml
 run:
-	uv run pitwall
+	uv run pitwall $(if $(CONFIG),-c "$(CONFIG)")
 
 test:
 	uv run pytest

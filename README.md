@@ -15,6 +15,9 @@ make typecheck  # mypy
 make format     # autofix + reformat
 ```
 
+Pick a specific config with `make run CONFIG=path/to/config.toml` (or
+`pitwall -c <path>`); without it the default path below is used.
+
 Install the git hooks once (hygiene + ruff + mypy on every commit):
 
 ```sh
