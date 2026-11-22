@@ -15,14 +15,17 @@ from pitwall.plugins.tts_mlx import DEFAULT_MODEL, MlxTtsPlugin
 
 
 class FakeLoader:
-    def __init__(self, error: Exception | None = None):
+    def __init__(self, error: Exception | None = None, delay: float = 0.0):
         self.repos: list[str] = []
         self.error = error
+        self.delay = delay
 
     def __call__(self, repo: str):
         self.repos.append(repo)
         if self.error:
             raise self.error
+        if self.delay:
+            time.sleep(self.delay)
         return object()
 
 
@@ -207,3 +210,23 @@ async def test_model_load_failure_propagates_from_start(monkeypatch):
     with pytest.raises(RuntimeError, match="no such repo"):
         await asyncio.wait_for(plugin.start(ctx), timeout=5)
     await plugin.stop(ctx)
+
+
+async def test_requests_during_model_load_are_queued_not_dropped(monkeypatch):
+    loader = FakeLoader(delay=0.15)
+    renderer = FakeRenderer()
+    monkeypatch.setattr(tts_mlx, "load_model", loader)
+    monkeypatch.setattr(tts_mlx, "render_segment", renderer)
+    ctx = make_ctx({})
+    audio_q = ctx.audio.subscribe("speakers")
+    plugin = MlxTtsPlugin({})
+    task = asyncio.create_task(plugin.start(ctx))
+    await asyncio.sleep(0.02)  # model still loading
+    await ctx.speak.publish(request(Segment("during load", index=0)))
+    await asyncio.sleep(0.3)  # load (0.15s) finishes, synthesis runs
+    ctx.stopping.set()
+    await asyncio.wait_for(task, timeout=5)
+    await plugin.stop(ctx)
+    assert renderer.calls == [("during load", None, None)]
+    event = audio_q.get_nowait()
+    Path(event.path).unlink()

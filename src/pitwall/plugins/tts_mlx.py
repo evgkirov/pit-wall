@@ -67,9 +67,9 @@ class MlxTtsPlugin:
         self._config = dict(config or {})
 
     async def start(self, ctx: Context) -> None:
+        queue = ctx.speak.subscribe(ctx.instance)  # first: nothing is dropped while loading
         repo = self._config.get("model", DEFAULT_MODEL)
         model = await asyncio.to_thread(load_model, repo)
-        queue = ctx.speak.subscribe(ctx.instance)
         while not ctx.stopping.is_set():
             get_task = asyncio.ensure_future(queue.get())
             stop_task = asyncio.ensure_future(ctx.stopping.wait())
