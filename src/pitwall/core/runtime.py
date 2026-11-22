@@ -36,9 +36,30 @@ class Runtime:
         return bool(self._entries)
 
     async def start(self, config: Config) -> None:
+        channels, entries = self._build(config)
+        self._launch(channels, entries)
+
+    async def apply_config(self, config: Config) -> bool:
+        """Swap to a new graph; keep the old one running if the new one is invalid."""
+        try:
+            channels, entries = self._build(config)
+        except Exception as exc:
+            logging.getLogger("pitwall").error("config change rejected: %s", exc)
+            return False
+        await self.stop()
+        self._launch(channels, entries)
+        return True
+
+    def _build(
+        self, config: Config
+    ) -> tuple[
+        tuple[Channel[Message], Channel[SpeakRequest], Channel[Audio]],
+        list[_Entry],
+    ]:
         messages = Channel[Message]("messages")
         speak = Channel[SpeakRequest]("speak", splitter=split_by_target)
         audio = Channel[Audio]("audio")
+        channels = (messages, speak, audio)
 
         entries: list[_Entry] = []
         for spec in config.instances:
@@ -56,11 +77,16 @@ class Runtime:
                 stopping=asyncio.Event(),
             )
             entries.append(_Entry(spec=spec, factory=factory, plugin=plugin, ctx=ctx))
+        return channels, entries
 
-        # Everything built; only now launch tasks.
+    def _launch(
+        self,
+        channels: tuple[Channel[Message], Channel[SpeakRequest], Channel[Audio]],
+        entries: list[_Entry],
+    ) -> None:
         for entry in entries:
             entry.task = asyncio.create_task(self._supervise(entry), name=entry.spec.name)
-        self._channels = (messages, speak, audio)
+        self._channels = channels
         self._entries = entries
 
     async def stop(self) -> None:

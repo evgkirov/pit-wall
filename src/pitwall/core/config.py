@@ -1,8 +1,12 @@
 """Config loading and validation: plugin-keyed arrays of instance tables."""
 
+import logging
 import tomllib
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
+
+from watchfiles import awatch
 
 
 class ConfigError(Exception):
@@ -99,3 +103,28 @@ def _validate_targets(instances: list[InstanceSpec]) -> None:
                 "must name an enabled instance"
             )
             raise ConfigError(msg)
+
+
+async def watch_config(
+    path: Path, *, debounce: float = 1.6, step: float = 0.05
+) -> AsyncIterator[Config]:
+    """Yield a new Config on every valid change of the config file.
+
+    Malformed changes are logged and skipped; the watch never crashes.
+    """
+    path = Path(path).resolve()
+    logger = logging.getLogger("pitwall.watch")
+    async for changes in awatch(path.parent, debounce=int(debounce * 1000), step=int(step * 1000)):
+        for _, changed in changes:
+            if Path(changed).resolve() != path:
+                continue
+            try:
+                config = load_config(path)
+                if not config.instances:
+                    # Editors truncate-then-write; an empty file mid-save must not
+                    # tear down the running graph.
+                    msg = "config has no instances"
+                    raise ConfigError(msg)
+                yield config
+            except ConfigError as exc:
+                logger.error("config change rejected: %s", exc)
