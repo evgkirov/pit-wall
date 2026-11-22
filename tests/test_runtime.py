@@ -62,3 +62,47 @@ async def test_unknown_plugin_aborts_before_any_start():
     await asyncio.sleep(0)
     assert all(p.calls == [] for p in built)  # built, never started
     await rt.stop()
+
+
+async def test_crashing_plugin_is_restarted():
+    class Flaky(DummyPlugin):
+        attempts = 0
+
+        async def start(self, ctx):
+            Flaky.attempts += 1
+            if Flaky.attempts == 1:
+                raise RuntimeError("boom")
+            await ctx.stopping.wait()
+
+    register("test.flaky", Flaky)
+    rt = Runtime(backoff_start=0.0)
+    await rt.start(Config(instances=(InstanceSpec(name="flaky", plugin="test.flaky", config={}),)))
+    await asyncio.sleep(0.05)
+    assert Flaky.attempts == 2
+    await rt.stop()
+
+
+async def test_crashing_plugin_does_not_kill_neighbor():
+    class Flaky(DummyPlugin):
+        attempts = 0
+
+        async def start(self, ctx):
+            Flaky.attempts += 1
+            raise RuntimeError("boom")
+
+    built: list = []
+    register("test.flaky2", Flaky)
+    register("test.neighbor", recording_factory(built))
+    rt = Runtime(backoff_start=0.0)
+    await rt.start(
+        Config(
+            instances=(
+                InstanceSpec(name="flaky", plugin="test.flaky2", config={}),
+                spec("neighbor", plugin="test.neighbor"),
+            )
+        )
+    )
+    await asyncio.sleep(0.05)
+    assert Flaky.attempts >= 2  # flaky keeps being restarted
+    assert built[0].calls == ["start"]  # neighbor still running, unharmed
+    await rt.stop()

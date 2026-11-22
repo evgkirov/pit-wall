@@ -59,9 +59,7 @@ class Runtime:
 
         # Everything built; only now launch tasks.
         for entry in entries:
-            entry.task = asyncio.create_task(
-                self._run(entry.plugin, entry.ctx), name=entry.spec.name
-            )
+            entry.task = asyncio.create_task(self._supervise(entry), name=entry.spec.name)
         self._channels = (messages, speak, audio)
         self._entries = entries
 
@@ -78,5 +76,30 @@ class Runtime:
             await entry.plugin.stop(entry.ctx)
         self._channels = None
 
-    async def _run(self, plugin: Plugin, ctx: Context) -> None:
-        await plugin.start(ctx)
+    async def _supervise(self, entry: _Entry) -> None:
+        """Run a plugin, restarting it with backoff whenever it crashes.
+
+        A clean return means the plugin finished its work; only an exception
+        restarts it (with a fresh instance from the factory).
+        """
+        backoff = self._backoff_start
+        first_attempt = True
+        while not entry.ctx.stopping.is_set():
+            plugin = entry.plugin if first_attempt else entry.factory()
+            first_attempt = False
+            entry.plugin = plugin
+            try:
+                await plugin.start(entry.ctx)
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                entry.ctx.logger.exception(
+                    "plugin %s crashed; restarting in %.1fs", entry.spec.name, backoff
+                )
+                try:
+                    await asyncio.wait_for(entry.ctx.stopping.wait(), timeout=backoff)
+                    return  # stopping set during backoff
+                except TimeoutError:
+                    pass
+                backoff = min(backoff * 2, self._backoff_cap)
