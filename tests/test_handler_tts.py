@@ -15,9 +15,9 @@ def msg(text, kind="chat"):
 
 def test_render_default_template_no_maps():
     segs = render("{user} says: {text}", msg("hi"), {})
-    assert [s.text for s in segs] == ["alice", " says: ", "hi"]
+    assert [s.text for s in segs] == ["alice says: hi"]
     assert all(s.voice is None and s.target is None for s in segs)
-    assert [s.index for s in segs] == [0, 1, 2]
+    assert [s.index for s in segs] == [0]
 
 
 def test_render_voices_targets_and_literal_inheritance():
@@ -27,13 +27,44 @@ def test_render_voices_targets_and_literal_inheritance():
         voices={"user": "samantha", "text": "daniel"},
         targets={"text": "cloud"},
     )
-    assert [s.voice for s in segs] == ["samantha", "samantha", "daniel"]
-    assert [s.target for s in segs] == [None, None, "cloud"]
+    assert [s.text for s in segs] == ["alice says: ", "hi"]
+    assert [s.voice for s in segs] == ["samantha", "daniel"]
+    assert [s.target for s in segs] == [None, "cloud"]
+    assert [s.index for s in segs] == [0, 1]
 
 
 def test_render_request_target_fills_placeholders():
     segs = render("{user}: {text}", msg("b"), {}, target="mac")
+    assert len(segs) == 1  # same voice+target throughout: merged
     assert all(s.target == "mac" for s in segs)
+
+
+def test_render_merges_adjacent_same_voice_segments():
+    segs = render(
+        "{user} says {text}", msg("hi"), voices={"user": "af_heart", "text": "am_michael"}
+    )
+    assert [s.text for s in segs] == ["alice says ", "hi"]
+    assert [s.voice for s in segs] == ["af_heart", "am_michael"]
+    assert [s.index for s in segs] == [0, 1]
+
+
+def test_render_no_maps_collapses_to_one_segment():
+    segs = render("{user} says {text}", msg("hi"), {})
+    assert [s.text for s in segs] == ["alice says hi"]
+
+
+def test_render_does_not_merge_across_targets():
+    segs = render("{user} says {text}", msg("hi"), targets={"text": "cloud"})
+    # literal keeps the user's target (None); text is routed to cloud: no merge
+    assert [s.text for s in segs] == ["alice says ", "hi"]
+    assert [s.target for s in segs] == [None, "cloud"]
+    assert [s.index for s in segs] == [0, 1]
+
+
+def test_render_template_without_placeholders_is_one_literal():
+    segs = render("hello world", msg("hi"), {})
+    assert [s.text for s in segs] == ["hello world"]
+    assert segs[0].index == 0
 
 
 def test_render_rejects_unknown_placeholder():
@@ -82,14 +113,14 @@ async def test_short_message_filtered():
     h = Harness({"filters": {"min_length": {"min": 2}}})
     await h.run(msg("x"), msg("xy"))
     assert h.speak_q.qsize() == 1
-    assert h.speak_q.get_nowait().segments[-1].text == "xy"
+    assert h.speak_q.get_nowait().segments[-1].text.endswith("xy")
 
 
 async def test_min_length_honors_configured_min():
     h = Harness({"filters": {"min_length": {"min": 5}}})
     await h.run(msg("abc"), msg("abcdef"))
     assert h.speak_q.qsize() == 1
-    assert h.speak_q.get_nowait().segments[-1].text == "abcdef"
+    assert h.speak_q.get_nowait().segments[-1].text.endswith("abcdef")
 
 
 async def test_whisper_not_spoken():

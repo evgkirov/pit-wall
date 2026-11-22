@@ -49,7 +49,11 @@ def render(
     targets: dict[str, str] | None = None,
     target: str | None = None,
 ) -> tuple[Segment, ...]:
-    """Split a template into segments; literals inherit the preceding placeholder."""
+    """Split a template into segments; literals inherit the preceding placeholder.
+
+    Adjacent segments sharing both voice and target are merged into one, so a
+    request only breaks where the voice or routing actually changes.
+    """
     validate_template(template)
     voices = voices or {}
     targets = targets or {}
@@ -77,7 +81,21 @@ def render(
         segments.append(
             Segment(trailing, voice=last_voice, target=last_target, index=len(segments))
         )
-    return tuple(segments)
+
+    merged: list[Segment] = []
+    for segment in segments:
+        if merged and (segment.voice, segment.target) == (merged[-1].voice, merged[-1].target):
+            merged[-1] = Segment(
+                merged[-1].text + segment.text,
+                voice=segment.voice,
+                target=segment.target,
+                index=merged[-1].index,
+            )
+        else:
+            merged.append(
+                Segment(segment.text, voice=segment.voice, target=segment.target, index=len(merged))
+            )
+    return tuple(merged)
 
 
 class TtsHandlerPlugin:
