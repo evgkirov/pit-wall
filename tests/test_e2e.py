@@ -73,9 +73,9 @@ async def test_end_to_end_synthesizes_and_plays_in_order(tmp_path, monkeypatch):
     await rt.stop()
 
     say_texts = [c[-1] for c in say_sub.calls if c[0] == "say"]
-    assert say_texts == ["alice", " says: ", "hello world"]
+    assert say_texts == ["alice ", "hello world"]
     say_voices = [c[c.index("-v") + 1] for c in say_sub.calls if c[0] == "say"]
-    assert say_voices == ["Samantha", "Samantha", "Daniel"]
+    assert say_voices == ["Samantha", "Daniel"]
 
     # afplay plays exactly the files say produced, in segment order
     say_files = [c[c.index("-o") + 1] for c in say_sub.calls if c[0] == "say"]
