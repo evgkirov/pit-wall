@@ -58,7 +58,7 @@ class LocalOutputPlugin:
         return event.request_id
 
     async def _drain(self, ctx: Context, buffer: dict, next_index: dict, rid: str) -> None:
-        while rid in buffer and next_index[rid] in buffer[rid]:
+        while rid in buffer and next_index[rid] in buffer[rid] and not ctx.stopping.is_set():
             path = buffer[rid].pop(next_index[rid])
             await self._play(ctx, path)
             next_index[rid] += 1

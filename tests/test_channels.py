@@ -49,3 +49,12 @@ async def test_unsubscribe_stops_delivery():
     ch.unsubscribe("a")
     await ch.publish(req(Segment("a"), target="a"))
     assert q.empty()
+
+
+async def test_unknown_target_logs_warning(caplog):
+    caplog.set_level("WARNING")
+    ch: Channel[SpeakRequest] = Channel("speak", splitter=split_by_target)
+    mac = ch.subscribe("mac")
+    await ch.publish(req(Segment("a", target="ghost", index=0)))
+    assert mac.empty()
+    assert "ghost" in caplog.text

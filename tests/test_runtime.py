@@ -106,3 +106,58 @@ async def test_crashing_plugin_does_not_kill_neighbor():
     assert Flaky.attempts >= 2  # flaky keeps being restarted
     assert built[0].calls == ["start"]  # neighbor still running, unharmed
     await rt.stop()
+
+
+async def test_restart_passes_config_to_factory():
+    class ConfigGreedy(DummyPlugin):
+        attempts = 0
+
+        def __init__(self, config=None):
+            super().__init__()
+            self.cfg = config
+
+        async def start(self, ctx):
+            ConfigGreedy.attempts += 1
+            if self.cfg != {"channel": "shroud"}:
+                msg = f"config lost on attempt {ConfigGreedy.attempts}: {self.cfg}"
+                raise AssertionError(msg)
+            if ConfigGreedy.attempts == 1:
+                raise ConnectionError("network drop")
+            await ctx.stopping.wait()
+
+    register("test.cfg", ConfigGreedy)
+    rt = Runtime(backoff_start=0.0)
+    await rt.start(
+        Config(instances=(InstanceSpec(name="s", plugin="test.cfg", config={"channel": "shroud"}),))
+    )
+    await asyncio.sleep(0.05)
+    assert ConfigGreedy.attempts == 2  # dropped once, then healthy — not crash-looping
+    await rt.stop()
+
+
+async def test_stop_tolerates_hung_tasks_and_calls_stop():
+    built: list = []
+
+    class Hung(DummyPlugin):
+        async def start(self, ctx):
+            await asyncio.sleep(60)
+
+    class Recording(DummyPlugin):
+        def __init__(self, config=None):
+            super().__init__()
+            built.append(self)
+
+    register("test.hung", Hung)
+    register("test.stoppable", Recording)
+    rt = Runtime(backoff_start=0.0, stop_timeout=0.05)
+    await rt.start(
+        Config(
+            instances=(
+                InstanceSpec(name="h", plugin="test.hung", config={}),
+                spec("s", plugin="test.stoppable"),
+            )
+        )
+    )
+    await asyncio.sleep(0.01)
+    await rt.stop()  # must not raise, despite the hung task
+    assert built[0].calls == ["start", "stop"]  # stop() still called for everyone

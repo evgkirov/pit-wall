@@ -11,6 +11,7 @@ can use different voices.
 make run        # runs `uv run pitwall`
 make test       # pytest
 make lint       # ruff check + format check
+make typecheck  # mypy
 make format     # autofix + reformat
 ```
 

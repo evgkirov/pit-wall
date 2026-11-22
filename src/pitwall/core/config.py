@@ -95,14 +95,21 @@ def _validate_targets(instances: list[InstanceSpec]) -> None:
     enabled = {spec.name for spec in instances if spec.enabled}
     for spec in instances:
         target = spec.config.get("target")
-        if target is None:
-            continue
-        if target not in enabled:
+        if target is not None and target not in enabled:
             msg = (
                 f"[{spec.plugin}] alias {spec.name!r}: target {target!r} "
                 "must name an enabled instance"
             )
             raise ConfigError(msg)
+        targets = spec.config.get("targets")
+        if isinstance(targets, dict):
+            for placeholder, alias in targets.items():
+                if alias not in enabled:
+                    msg = (
+                        f"[{spec.plugin}] alias {spec.name!r}: "
+                        f"targets.{placeholder} -> {alias!r} must name an enabled instance"
+                    )
+                    raise ConfigError(msg)
 
 
 async def watch_config(

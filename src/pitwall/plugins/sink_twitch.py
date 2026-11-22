@@ -118,24 +118,25 @@ class TwitchSinkPlugin:
                     joined = True
                     ctx.logger.info("joined #%s as %s", channel, nick)
                     continue
-                if "PING " in line:
-                    conn.send("PONG " + line.split("PING ", 1)[1])
-                elif line == "PING":
-                    conn.send("PONG")
-                else:
-                    parsed = parse_privmsg(line)
-                    if parsed is not None:
-                        user, text = parsed
-                        await ctx.messages.publish(
-                            Message(
-                                source="twitch",
-                                user=user,
-                                text=text,
-                                ts=time.time(),
-                                kind="chat",
-                            )
+                words = line.split()
+                is_ping = bool(words) and (
+                    words[0] == "PING" or (len(words) > 1 and words[1] == "PING")
+                )
+                if is_ping:
+                    conn.send("PONG " + words[-1] if len(words) > 1 else "PONG")
+                    continue
+                parsed = parse_privmsg(line)
+                if parsed is not None:
+                    user, text = parsed
+                    await ctx.messages.publish(
+                        Message(
+                            source="twitch",
+                            user=user,
+                            text=text,
+                            ts=time.time(),
+                            kind="chat",
                         )
-                continue
+                    )
         finally:
             await conn.close()
 

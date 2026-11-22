@@ -1,6 +1,7 @@
 """Typed channels: named-instance delivery with optional event splitting."""
 
 import asyncio
+import logging
 from collections.abc import Callable
 
 from pitwall.core.events import SpeakRequest
@@ -67,10 +68,14 @@ class Channel[T]:
 
     def _deliver(self, target: str | None, event: T) -> None:
         if target is None:
-            for queue in self._subscribers.values():
-                queue.put_nowait(event)
-        elif (queue := self._subscribers.get(target)) is not None:
-            queue.put_nowait(event)
+            for subscriber_queue in self._subscribers.values():
+                subscriber_queue.put_nowait(event)
+        elif (target_queue := self._subscribers.get(target)) is not None:
+            target_queue.put_nowait(event)
+        else:
+            logging.getLogger("pitwall.channels").warning(
+                "channel %s: no subscriber named %r; event dropped", self.name, target
+            )
 
     async def publish(self, event: T) -> None:
         if self._splitter is not None:

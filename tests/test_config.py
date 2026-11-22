@@ -57,6 +57,16 @@ def test_target_must_not_name_disabled_alias(tmp_path):
         )
 
 
+def test_targets_values_must_name_enabled_alias(tmp_path):
+    with pytest.raises(ConfigError, match="ghost"):
+        load_config(
+            write(
+                tmp_path,
+                '[[tts.say]]\nalias = "a"\n\n[[handler.tts]]\ntargets = { text = "ghost" }\n',
+            )
+        )
+
+
 def test_not_an_array_of_tables_raises(tmp_path):
     with pytest.raises(ConfigError, match="sink.twitch"):
         load_config(write(tmp_path, '[sink.twitch]\nchannel = "x"\n'))

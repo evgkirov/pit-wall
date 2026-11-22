@@ -117,6 +117,15 @@ async def test_ping_answered_with_pong():
     assert "PONG :tmi.twitch.tv" in conn.sent
 
 
+async def test_ping_word_in_chat_text_is_not_a_ping():
+    conn = FakeConnection(
+        WELCOME + [":bob!bob@bob.tmi.twitch.tv PRIVMSG #shroud :can someone PING me pls"]
+    )
+    ctx, q, conn = await run_sink({"channel": "shroud"}, conn)
+    assert q.get_nowait().text == "can someone PING me pls"
+    assert not any(line.startswith("PONG") for line in conn.sent)
+
+
 async def test_channel_required():
     plugin = TwitchSinkPlugin({})
     with pytest.raises(ValueError, match="channel"):

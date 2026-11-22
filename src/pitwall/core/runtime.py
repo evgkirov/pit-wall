@@ -10,8 +10,6 @@ from pitwall.core.events import Audio, Message, SpeakRequest
 from pitwall.core.plugin import Context, Plugin
 from pitwall.core.registry import Factory, factory_for
 
-_STOP_TIMEOUT = 5.0
-
 
 @dataclass
 class _Entry:
@@ -25,9 +23,15 @@ class _Entry:
 class Runtime:
     """Owns the channel set and the plugin instance tasks for one graph."""
 
-    def __init__(self, backoff_start: float = 1.0, backoff_cap: float = 30.0) -> None:
+    def __init__(
+        self,
+        backoff_start: float = 1.0,
+        backoff_cap: float = 30.0,
+        stop_timeout: float = 5.0,
+    ) -> None:
         self._backoff_start = backoff_start
         self._backoff_cap = backoff_cap
+        self._stop_timeout = stop_timeout
         self._entries: list[_Entry] = []
         self._channels: tuple[Channel[Message], Channel[SpeakRequest], Channel[Audio]] | None = None
 
@@ -94,12 +98,25 @@ class Runtime:
         for entry in entries:
             entry.ctx.stopping.set()
         if entries:
-            await asyncio.wait_for(
-                asyncio.gather(*(e.task for e in entries if e.task), return_exceptions=True),
-                timeout=_STOP_TIMEOUT,
-            )
+            tasks = [e.task for e in entries if e.task]
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=self._stop_timeout,
+                )
+            except TimeoutError:
+                logging.getLogger("pitwall").warning(
+                    "plugins did not stop within %.1fs; cancelling stragglers",
+                    self._stop_timeout,
+                )
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
         for entry in entries:
-            await entry.plugin.stop(entry.ctx)
+            try:
+                await entry.plugin.stop(entry.ctx)
+            except Exception:
+                logging.getLogger("pitwall").exception("stop failed for %s", entry.spec.name)
         self._channels = None
 
     async def _supervise(self, entry: _Entry) -> None:
@@ -111,7 +128,7 @@ class Runtime:
         backoff = self._backoff_start
         first_attempt = True
         while not entry.ctx.stopping.is_set():
-            plugin = entry.plugin if first_attempt else entry.factory()
+            plugin = entry.plugin if first_attempt else entry.factory(entry.spec.config)
             first_attempt = False
             entry.plugin = plugin
             try:
