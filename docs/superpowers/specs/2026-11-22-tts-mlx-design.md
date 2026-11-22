@@ -53,9 +53,13 @@ to `tts.say`.
 - Config keys: `model` (default: the kokoro repo above), `voice` (default voice
   name), `voices` (key → model voice name, same shape as `tts.say`), `speed`
   (float multiplier; no `rate` equivalent).
-- The model loads during `start()` via `asyncio.to_thread`, so a bad model name
-  fails the rebuild loudly while the old graph keeps running. Synthesis runs in
-  a thread too (MLX inference is synchronous).
+- The model loads during `start()` via `asyncio.to_thread` (the plugin subscribes
+  first, so nothing is dropped while loading). A bad model name therefore fails
+  *loudly but late*: `apply_config` stops the old graph before launching the new
+  one, so a typo'd repo means the app stays up (the supervisor logs the failure
+  and retries with backoff) but speech pauses until the config is fixed — the
+  next save recovers. Synthesis runs in a thread too (MLX inference is
+  synchronous).
 - Unknown voice keys log a warning and fall back to the default voice — parity
   with `tts.say`.
 - Tests fake the model exactly as the existing tests fake `say`/`afplay`: no
