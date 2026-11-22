@@ -80,17 +80,18 @@ as its own task under a supervisor.
 - `speak`: `SpeakRequest` (from handlers) → TTS.
 - `audio`: `Audio` (from TTS) → voice output.
 
-**Targeted delivery.** An event carrying a `target` (an instance alias) is
-delivered only to the instance it names on that channel; without one it goes to
-every instance on the channel. This is what lets two `tts.say` instances (say,
-different voices) coexist without reading every message twice.
+**Routing.** A segment may name a `target` (an instance alias); it falls back
+to the request's `target`, and failing that the request is broadcast to every
+TTS instance. The `speak` channel splits a request per distinct target,
+delivering each instance a sub-request holding its segments with their original
+indices intact.
 
-**Voices within an utterance.** Routing picks the *speaker* (an instance);
-voice keys pick the *timbre* (within that instance). A `SpeakRequest` is an
-ordered list of segments, each optionally naming a voice key that the consuming
-TTS instance resolves to a backend voice. Per-part voices never route to
-multiple instances — instances consume in parallel, which would overlap or
-reorder the parts.
+**Ordering lives at the output.** TTS instances are *synthesizers*: they turn
+each segment into an `Audio` event tagged `(request_id, index)` and never touch
+the speaker. The output instance is the *player*: it buffers per `request_id`
+and plays parts in `index` order. Parts may therefore be synthesized in
+parallel — even by different backends, say `tts.say` for usernames and a future
+`tts.elevenlabs` for messages — and still play as one utterance, in order.
 
 **Plugin contract.** Every plugin implements an async lifecycle:
 
@@ -111,22 +112,25 @@ assumes a fixed slot, which is what keeps it extensible.
 (e.g. `sink.twitch` → `pitwall.plugins.sink_twitch`). The config instantiates
 them: each top-level key is a **plugin name** whose value is an array of
 instance tables — two `[[tts.say]]` blocks are two instances with different
-configs — and each instance is identified by its `alias`, unique across the
-whole file. A plugin can be instantiated any number of times. Future external
-plugins would resolve via setuptools entry points — not built in v1, but the
-registry shape leaves the seam open.
+configs — and each instance is identified by its `alias` (defaulting to the
+plugin name's last dotted component: `sink.twitch` → `twitch`), unique across
+the whole file. A plugin can be instantiated any number of times. Future
+external plugins would resolve via setuptools entry points — not built in v1,
+but the registry shape leaves the seam open.
 
 **Data models** (dataclasses in `core/events.py`):
 
 - `Message(source, user, text, ts, kind="chat", raw=None)`
-- `Segment(text, voice=None)` — one spoken part; `voice` is a voice *key* the
-  TTS instance resolves (`None` = the instance's default voice).
-- `SpeakRequest(segments, source=None, user=None, meta=None, target=None)` —
-  an ordered tuple of `Segment`s; `target` names the TTS instance that should
-  read it (see targeted delivery).
-- `Audio(text, source=None, user=None, played=False)` — in v1 it carries the
-  text plus a "played" marker; a future TTS returns bytes/stream that an output
-  consumes.
+- `Segment(text, voice=None, target=None, index=0)` — one spoken part.
+  `voice` is a voice *key* the TTS instance resolves (`None` = its default
+  voice); `target` is an instance alias (falls back to the request's target);
+  `index` is the part's position in the utterance.
+- `SpeakRequest(request_id, segments, source=None, user=None, meta=None,
+  target=None)` — a unique `request_id` (assigned by the handler) plus an
+  ordered tuple of `Segment`s.
+- `Audio(path, request_id, index, source=None, user=None)` — a synthesized
+  audio file (AIFF from `say`, whatever a backend produces) plus its ordering
+  tags.
 
 **v1 plugins**
 
@@ -151,40 +155,41 @@ registry shape leaves the seam open.
     part, and a literal run joins the preceding placeholder's voice — so the
     default template reads "Alice says:" in the username's voice and the
     message text in another.
-  - *Target*: optional `target` config pins the handler's output to one TTS
-    instance (sets `SpeakRequest.target`); unset means every TTS instance
-    reads. A future filter could set it per message (e.g. a per-viewer voice).
+  - *Routing*: an optional `target` config pins the handler's requests to one
+    TTS instance; an optional `targets` map (placeholder → alias) routes a
+    single placeholder elsewhere — e.g. usernames to `tts.say`, messages to a
+    future `tts.elevenlabs`. Unset means broadcast. A literal run joins the
+    preceding placeholder's voice **and** target.
   This is the only v1 handler; command handling is a future handler.
-- `tts.say` — consumes `speak`; plays a request's segments in order, one
-  `say [-v <voice>] [-r rate] "<text>"` subprocess per segment, awaited so
-  parts never overlap. Config: default `voice` and `rate` plus a `voices` map
-  (voice key → `say` voice name); an unknown key logs a warning and falls back
-  to the default voice. Publishes `Audio(..., played=True)` to `audio` once
-  per request.
-- `output.local` — consumes `audio`; in v1 it confirms / logs playback. This is
-  the seam: a future `output.discord` / `output.pulse` consumes the same channel.
-
-**Seam note.** Because `say` writes to the device itself, the `audio`→`output`
-stage is real plumbing but `say` does the device write in v1; `output.local` is
-a thin confirmation and becomes the real output router when a future TTS returns
-routable audio.
+- `tts.say` — a *synthesizer*: for each segment of a request, resolve the
+  voice (default `voice` and `rate`, a `voices` map of key → `say` voice name,
+  unknown key → warning + default), run
+  `say -o <tmpfile> [-v <voice>] [-r rate] "<text>"`, and publish
+  `Audio(path=tmpfile, request_id, index)` to `audio`. It never plays audio
+  itself.
+- `output.local` — the *player*: consumes `audio`, buffers parts per
+  `request_id`, and plays them in `index` order via `afplay`, deleting each
+  file after playback. A stall timeout flushes a partial request so a lost
+  part can't block the queue forever. A future `output.discord` consumes the
+  same channel the same way.
 
 **Config & restart**
 
 - Path: `$XDG_CONFIG_HOME/pitwall/config.toml` (fallback
   `~/.config/pitwall/config.toml`; `$XDG_CONFIG_HOME` may be unset).
 - Shape: every top-level key is a **plugin name** whose value is an array of
-  instance tables (`[[plugin.name]]`). Each instance table has a required
-  string `alias` (its identity, unique file-wide — what `target` and voice
-  keys reference), an optional `enabled` (default `true`), and the rest is
-  that instance's config. A missing or duplicate `alias` is a config error.
-  Filters live inline in the handler instance as an ordered table
-  (`name → config`). v1 example (one of everything; usernames read in
-  Samantha, messages in Daniel):
+  instance tables (`[[plugin.name]]`). Each instance table has an optional
+  string `alias` — its identity, what `target` and voice keys reference —
+  defaulting to the plugin name's last dotted component (`sink.twitch` →
+  `twitch`); an optional `enabled` (default `true`); and the rest is that
+  instance's config. A duplicate alias, explicit or derived (two alias-less
+  `[[tts.say]]` blocks both become `say`), is a config error. Filters live
+  inline in the handler instance as an ordered table (`name → config`).
+  v1 example (one of everything; usernames read in Samantha, messages in
+  Daniel):
 
 ```toml
-[[sink.twitch]]
-alias = "twitch"
+[[sink.twitch]]                 # no alias → defaults to "twitch"
 channel = "<your channel>"      # the only required value
 
 [[handler.tts]]
@@ -193,9 +198,10 @@ template = "{user} says: {text}"
 filters = { min_length = { min = 2 } }           # applied in order, all must pass
 voices = { user = "samantha", text = "daniel" }  # placeholder → voice key
 # target = "mix"                # pin to one TTS alias; all when unset
+# targets = { text = "cloud" }  # per-placeholder alias override (e.g. ElevenLabs)
 
 [[tts.say]]
-alias = "mix"                   # ONE instance plays each request in order
+alias = "mix"                   # synthesizes parts in order; playback is output's
 voice = "Alex"                  # default for unkeyed parts
 rate = 180
 voices = { samantha = "Samantha", daniel = "Daniel" }  # key → say voice name
@@ -237,9 +243,11 @@ down the loop. `twitchio` handles chat reconnection.
   times (e.g. two `tts.say` voices).
 - Routing is **target-based**: an event may name a target instance; delivery
   goes there only, or to every instance on the channel when unset.
-- Utterances are **per-part voiced**: a request is ordered segments with voice
-  keys resolved inside one TTS instance; routing stays per-request (`target`),
-  never per-part.
+- The pipeline is **synthesizer/sequencer**: TTS instances synthesize parts to
+  audio files tagged `(request_id, index)` and never touch the speaker; the
+  output instance sequences and plays them. Per-part routing across TTS
+  backends (say for usernames, ElevenLabs for messages) works without
+  reordering or overlap.
 - The user-facing entrypoint is `make run`.
 - If `twitchio` can't run on Python 3.15, the Python pin bends (the newest
   version twitchio supports, via `uv`); hand-rolling IRC is a last resort.
