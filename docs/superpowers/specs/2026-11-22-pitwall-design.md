@@ -80,7 +80,7 @@ as its own task under a supervisor.
 - `speak`: `SpeakRequest` (from handlers) → TTS.
 - `audio`: `Audio` (from TTS) → voice output.
 
-**Targeted delivery.** An event carrying a `target` (an instance name) is
+**Targeted delivery.** An event carrying a `target` (an instance alias) is
 delivered only to the instance it names on that channel; without one it goes to
 every instance on the channel. This is what lets two `tts.say` instances (say,
 different voices) coexist without reading every message twice.
@@ -109,11 +109,12 @@ assumes a fixed slot, which is what keeps it extensible.
 **Registry & instances.** Built-in plugins register by name (`sink.twitch`,
 `handler.tts`, `tts.say`, `output.local`); a name resolves to an import path
 (e.g. `sink.twitch` → `pitwall.plugins.sink_twitch`). The config instantiates
-them: each config table is one **instance** of a plugin — `[voice_daniel]` and
-`[voice_samantha]` are two instances of `tts.say` with different configs —
-identified by its table name. A plugin can be instantiated any number of
-times. Future external plugins would resolve via setuptools entry points — not
-built in v1, but the registry shape leaves the seam open.
+them: each top-level key is a **plugin name** whose value is an array of
+instance tables — two `[[tts.say]]` blocks are two instances with different
+configs — and each instance is identified by its `alias`, unique across the
+whole file. A plugin can be instantiated any number of times. Future external
+plugins would resolve via setuptools entry points — not built in v1, but the
+registry shape leaves the seam open.
 
 **Data models** (dataclasses in `core/events.py`):
 
@@ -137,8 +138,9 @@ built in v1, but the registry shape leaves the seam open.
   message runs through a **filter chain** (always: skip whispers, skip the bot's
   own user; then any configured filters), and survivors are published to `speak`
   rendered through an utterance template.
-  - *Filter infrastructure*: the config declares a list of named filters a
-    message must **all** pass to be spoken. v1 ships one example filter,
+  - *Filter infrastructure*: the handler's `filters` key is an ordered table
+    of named filters (`{ min_length = { min = 2 } }`); a message must pass
+    **all** of them, in order, to be spoken. v1 ships one example filter,
     `min_length`, which skips messages shorter than 2 characters; everything
     else is read. More named filters (by user, keyword, emote-only) drop in
     later without touching core.
@@ -171,42 +173,45 @@ routable audio.
 
 - Path: `$XDG_CONFIG_HOME/pitwall/config.toml` (fallback
   `~/.config/pitwall/config.toml`; `$XDG_CONFIG_HOME` may be unset).
-- Shape: every top-level table is one **plugin instance** — the table name is
-  the instance ID, `plugin` names the plugin, and the remaining keys are that
-  instance's config. `enabled = false` disables an instance (default `true`);
-  there is no separate enabled list. A table missing its `plugin` key is a
-  config error. Filters live in a nested `filters` table inside their handler
-  instance. v1 example (one of everything; usernames read in Samantha,
-  messages in Daniel):
+- Shape: every top-level key is a **plugin name** whose value is an array of
+  instance tables (`[[plugin.name]]`). Each instance table has a required
+  string `alias` (its identity, unique file-wide — what `target` and voice
+  keys reference), an optional `enabled` (default `true`), and the rest is
+  that instance's config. A missing or duplicate `alias` is a config error.
+  Filters live inline in the handler instance as an ordered table
+  (`name → config`). v1 example (one of everything; usernames read in
+  Samantha, messages in Daniel):
 
 ```toml
-[twitch]
-plugin = "sink.twitch"
+[[sink.twitch]]
+alias = "twitch"
 channel = "<your channel>"      # the only required value
 
-[reader]                        # an instance of handler.tts
-plugin = "handler.tts"
+[[handler.tts]]
+alias = "reader"
 template = "{user} says: {text}"
-filters = ["min_length"]
+filters = { min_length = { min = 2 } }           # applied in order, all must pass
 voices = { user = "samantha", text = "daniel" }  # placeholder → voice key
-# target = "voice"              # pin to one TTS instance; all when unset
+# target = "mix"                # pin to one TTS alias; all when unset
 
-[reader.filters.min_length]
-min = 2
-
-[voice]                         # ONE instance plays each request in order
-plugin = "tts.say"
+[[tts.say]]
+alias = "mix"                   # ONE instance plays each request in order
 voice = "Alex"                  # default for unkeyed parts
 rate = 180
 voices = { samantha = "Samantha", daniel = "Daniel" }  # key → say voice name
 
-[speakers]
-plugin = "output.local"
+[[tts.say]]
+alias = "backup"                # same plugin, second instance, disabled
+enabled = false
+voice = "Alex"
+
+[[output.local]]
+alias = "speakers"
 ```
 - Watched with `watchfiles`. On change: validate; if valid, **gracefully tear
   down and rebuild** the plugin graph in-process (stop all plugin tasks, close
   the Twitch connection, start the new graph). If invalid / malformed —
-  including a `target` naming an unknown or disabled instance — keep the
+  including a `target` naming an unknown or disabled alias — keep the
   last-good graph and log the error. No shell relaunch.
 - Signals: `SIGINT` / `SIGTERM` → graceful shutdown (stop plugins, close
   connections, exit).
@@ -226,9 +231,10 @@ down the loop. `twitchio` handles chat reconnection.
 - The handler ships **filter infrastructure** with an example filter that skips
   messages under 2 characters; everything else is read.
 - The utterance includes the username by default: `"{user} says: {text}"`.
-- Config is **instance-based**: one table per plugin instance (a `plugin` key
-  plus a free-form instance name), `enabled` per instance; the same plugin can
-  be instantiated multiple times (e.g. two `tts.say` voices).
+- Config is **plugin-keyed arrays**: each top-level key is a plugin name whose
+  value is an array of instance tables; each instance has a file-wide-unique
+  `alias` and optional `enabled`; the same plugin can be instantiated multiple
+  times (e.g. two `tts.say` voices).
 - Routing is **target-based**: an event may name a target instance; delivery
   goes there only, or to every instance on the channel when unset.
 - Utterances are **per-part voiced**: a request is ordered segments with voice
@@ -242,10 +248,9 @@ down the loop. `twitchio` handles chat reconnection.
 
 - `tts.say` defaults to the system default voice; `voice` / `rate` are
   configurable per instance.
-- Filters are named predicates declared in a nested
-  `[instance.filters.<name>]` table inside a `handler.tts` instance — not a
-  separate plugin type yet; they get promoted if they ever need behavior beyond
-  a config table.
+- Filters are named predicates declared inline in a `handler.tts` instance's
+  `filters` table — not a separate plugin type yet; they get promoted if they
+  ever need behavior beyond a config table.
 - Layout: a `src/pitwall/` package — core in `core/`, plugins in `plugins/`,
   entry via `__main__.py` plus a `pitwall` console script. The user-facing
   entrypoint is a Makefile: `make run` (wraps `uv run pitwall`), with
