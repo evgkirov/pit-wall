@@ -12,7 +12,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-mlxaudio = ["mlx-audio[tts]>=0.6"]
+mlxaudio = [
+    "mlx-audio[tts]>=0.6",
+    "misaki[en]",         # kokoro's phonemizer (en); not pulled in by mlx-audio itself
+]
 
 [project.scripts]
 pitwall = "pitwall.cli:main"

@@ -64,7 +64,7 @@ Swap `say` for local neural voices with
 [mlx-audio](https://github.com/Neywa-Labs/mlx-audio):
 
 ```sh
-uv sync --extra mlxaudio
+uv sync --extra mlxaudio   # includes kokoro's phonemizer (misaki)
 ```
 
 ```toml
@@ -75,9 +75,21 @@ voices = { user = "af_heart", text = "am_michael" }
 speed = 1.0
 ```
 
-The first run downloads model weights from Hugging Face; startup loads the
-model into memory (a few seconds). `voice`/`voices`/`speed` mirror `tts.say`,
-with model-specific voice names instead of macOS voice names.
+The first run downloads model weights from Hugging Face (kokoro is ~170 MB;
+bigger models take minutes); startup loads the model into memory — a few
+seconds once cached. `voice`/`voices`/`speed` mirror `tts.say`, with
+model-specific voice names instead of macOS voice names. Japanese/Chinese
+kokoro voices additionally need `misaki[ja]` / `misaki[zh]` (English is
+already included in the extra).
+
+Neural synthesis is slower than `say` (~0.5–3 s per part). If parts of a
+message play out of order or you see "flushing stalled request" warnings,
+raise the output's stall timeout:
+
+```toml
+[[output.local]]
+stall_timeout = 30.0
+```
 
 Save the file while PitWall is running and it rebuilds itself in-process —
 invalid changes are rejected and the previous graph keeps running.

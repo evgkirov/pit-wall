@@ -34,4 +34,7 @@ alias = "voice"
 # Play through local speakers.
 [[output.local]]
 alias = "speakers"
+# Raise this if tts.mlx synthesis is slower than playback + 5s and parts
+# start playing out of order ("flushing stalled request" warnings):
+# stall_timeout = 30.0
 # enabled = false  # any instance can be disabled without deleting it

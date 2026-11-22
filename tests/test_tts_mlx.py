@@ -94,7 +94,7 @@ def test_registered_in_builtin_registry():
 
 def test_missing_extra_raises_helpful_error(monkeypatch):
     monkeypatch.setitem(sys.modules, "mlx_audio", None)
-    with pytest.raises(RuntimeError, match="mlxaudio"):
+    with pytest.raises(RuntimeError, match=r"tts\.mlx.*mlxaudio"):
         tts_mlx.load_model("mlx-community/Kokoro-82M-bf16")
 
 
