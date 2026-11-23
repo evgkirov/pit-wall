@@ -13,7 +13,7 @@ def msg(text, kind="chat"):
     return Message(source="twitch", user="alice", text=text, ts=1.0, kind=kind)
 
 
-def test_render_default_template_no_maps():
+def test_render_no_maps_merges_whole_template():
     segs = render("{user} says: {text}", msg("hi"), {})
     assert [s.text for s in segs] == ["alice says: hi"]
     assert all(s.voice is None and s.target is None for s in segs)
@@ -59,6 +59,15 @@ def test_render_does_not_merge_across_targets():
     assert [s.text for s in segs] == ["alice says ", "hi"]
     assert [s.target for s in segs] == [None, "cloud"]
     assert [s.index for s in segs] == [0, 1]
+
+
+def test_render_merges_leading_literal_under_request_target():
+    segs = render("intro: {user} {text}", msg("hi"), {}, target="mac")
+    # the leading literal routes to the request target like everything else,
+    # so it merges instead of costing an extra (trimmed) join
+    assert [s.text for s in segs] == ["intro: alice hi"]
+    assert all(s.target == "mac" for s in segs)
+    assert [s.index for s in segs] == [0]
 
 
 def test_render_template_without_placeholders_is_one_literal():
@@ -122,14 +131,14 @@ async def test_short_message_filtered():
     h = Harness({"filters": {"min_length": {"min": 2}}})
     await h.run(msg("x"), msg("xy"))
     assert h.speak_q.qsize() == 1
-    assert h.speak_q.get_nowait().segments[-1].text.endswith("xy")
+    assert h.speak_q.get_nowait().segments[-1].text == "alice xy"
 
 
 async def test_min_length_honors_configured_min():
     h = Harness({"filters": {"min_length": {"min": 5}}})
     await h.run(msg("abc"), msg("abcdef"))
     assert h.speak_q.qsize() == 1
-    assert h.speak_q.get_nowait().segments[-1].text.endswith("abcdef")
+    assert h.speak_q.get_nowait().segments[-1].text == "alice abcdef"
 
 
 async def test_whisper_not_spoken():

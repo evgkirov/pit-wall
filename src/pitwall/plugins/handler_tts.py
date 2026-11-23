@@ -84,16 +84,19 @@ def render(
 
     merged: list[Segment] = []
     for segment in segments:
-        if merged and (segment.voice, segment.target) == (merged[-1].voice, merged[-1].target):
+        # Routing falls back to the request-level target, so a leading literal
+        # stored as None can share a target with the placeholders after it.
+        effective = segment.target or target
+        if merged and (segment.voice, effective) == (merged[-1].voice, merged[-1].target):
             merged[-1] = Segment(
                 merged[-1].text + segment.text,
                 voice=segment.voice,
-                target=segment.target,
+                target=merged[-1].target,
                 index=merged[-1].index,
             )
         else:
             merged.append(
-                Segment(segment.text, voice=segment.voice, target=segment.target, index=len(merged))
+                Segment(segment.text, voice=segment.voice, target=effective, index=len(merged))
             )
     return tuple(merged)
 
