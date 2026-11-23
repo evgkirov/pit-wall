@@ -23,7 +23,7 @@ EDGE_PAD_SECONDS = 0.02  # silence kept at clip edges after trimming
 
 def trim_silence(audio: Any, sample_rate: int) -> Any:
     """Drop leading/trailing silence Kokoro pads onto clips, keeping a small pad."""
-    import numpy as np  # type: ignore
+    import numpy as np
 
     loud = np.flatnonzero(np.abs(audio) > SILENCE_THRESHOLD)
     if not loud.size:
@@ -64,7 +64,7 @@ def render_segment(
         if not chunks:
             sample_rate = result.sample_rate
         chunks.append(result.audio)
-    import numpy as np  # type: ignore
+    import numpy as np
 
     audio = np.concatenate([np.asarray(c) for c in chunks])
     audio = trim_silence(audio, sample_rate)
