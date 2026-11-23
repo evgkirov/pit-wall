@@ -16,6 +16,7 @@ from pitwall.plugins import register_builtins, tts_mlx
 from pitwall.plugins.tts_mlx import (
     DEFAULT_MODEL,
     EDGE_PAD_SECONDS,
+    SILENCE_THRESHOLD,
     MlxTtsPlugin,
     render_segment,
     trim_silence,
@@ -226,6 +227,13 @@ def test_trim_silence_clamps_when_shorter_than_pad():
 def test_trim_silence_all_silent_unchanged():
     audio = np.zeros(500)
     assert len(trim_silence(audio, 24_000)) == 500
+
+
+def test_trim_silence_threshold_bounds_loudness():
+    sr = 1  # pad = int(1 * 0.02) = 0 samples: the trim is exact
+    audio = np.array([0.0, SILENCE_THRESHOLD / 2, SILENCE_THRESHOLD * 2, 0.0])
+    # only strictly-louder-than-threshold samples count as speech
+    assert list(trim_silence(audio, sr)) == [SILENCE_THRESHOLD * 2]
 
 
 def test_render_segment_trims_padded_audio(tmp_path):
